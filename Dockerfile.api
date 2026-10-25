@@ -1,0 +1,36 @@
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/api/prisma apps/api/prisma
+
+RUN npm ci --workspace @mini-crm/api --include-workspace-root=false
+RUN npx prisma generate --schema=apps/api/prisma/schema.prisma
+
+FROM node:20-alpine AS build
+WORKDIR /app
+
+COPY --from=deps /app/package.json /app/package-lock.json ./
+COPY --from=deps /app/apps/api/package.json apps/api/package.json
+COPY --from=deps /app/apps/api/prisma apps/api/prisma
+COPY --from=deps /app/node_modules node_modules
+
+COPY apps/api/tsconfig.json apps/api/tsconfig.json
+COPY apps/api/src apps/api/src
+
+RUN npm run build -w @mini-crm/api
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=deps /app/package.json /app/package-lock.json ./
+COPY --from=deps /app/apps/api/package.json apps/api/package.json
+COPY --from=deps /app/apps/api/prisma apps/api/prisma
+COPY --from=deps /app/node_modules node_modules
+COPY --from=build /app/apps/api/dist apps/api/dist
+
+EXPOSE 4000
+
+CMD ["sh", "-c", "npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma && if [ \"${AUTO_SEED:-false}\" = \"true\" ]; then npm run prisma:seed -w @mini-crm/api; fi && node apps/api/dist/index.js"]

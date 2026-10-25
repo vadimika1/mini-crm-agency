@@ -1,0 +1,26 @@
+{
+  "name": "mini-crm-agency",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @mini-crm/api",
+    "dev:api": "npm run dev -w @mini-crm/api",
+    "dev:api:plain": "npm run dev:plain -w @mini-crm/api",
+    "dev:web": "npm run dev -w @mini-crm/web",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test:api && npm run test:web",
+    "test:api": "npm run test -w @mini-crm/api",
+    "test:web": "npm run test -w @mini-crm/web",
+    "docker:prod:up": "docker compose -f docker-compose.prod.yml up --build -d",
+    "docker:prod:down": "docker compose -f docker-compose.prod.yml down",
+    "backup:db": "bash ./scripts/db-backup.sh",
+    "restore:db": "bash ./scripts/db-restore.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

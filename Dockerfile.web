@@ -1,0 +1,39 @@
+FROM node:20-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package.json
+
+RUN npm ci --workspace @mini-crm/web --include-workspace-root=false
+
+FROM node:20-alpine AS build
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=deps /app/package.json /app/package-lock.json ./
+COPY --from=deps /app/apps/web/package.json apps/web/package.json
+COPY --from=deps /app/node_modules node_modules
+
+COPY apps/web/next.config.ts apps/web/next.config.ts
+COPY apps/web/tsconfig.json apps/web/tsconfig.json
+COPY apps/web/next-env.d.ts apps/web/next-env.d.ts
+COPY apps/web/instrumentation-client.ts apps/web/instrumentation-client.ts
+COPY apps/web/app apps/web/app
+
+RUN npm run build -w @mini-crm/web
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY --from=deps /app/package.json /app/package-lock.json ./
+COPY --from=deps /app/apps/web/package.json apps/web/package.json
+COPY --from=deps /app/node_modules node_modules
+COPY --from=build /app/apps/web/.next apps/web/.next
+COPY --from=build /app/apps/web/next.config.ts apps/web/next.config.ts
+COPY --from=build /app/apps/web/instrumentation-client.ts apps/web/instrumentation-client.ts
+
+EXPOSE 3000
+
+CMD ["npm", "run", "start", "-w", "@mini-crm/web"]

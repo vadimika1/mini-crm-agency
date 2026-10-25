@@ -1,0 +1,381 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LeadStatus {
+  OPEN
+  WON
+  LOST
+}
+
+enum LeadPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DealStatus {
+  OPEN
+  WON
+  LOST
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskType {
+  CALL
+  EMAIL
+  MEETING
+  FOLLOW_UP
+  CUSTOM
+}
+
+enum ActivityType {
+  CALL
+  EMAIL
+  MESSAGE
+  MEETING
+  NOTE
+}
+
+enum StageOutcome {
+  OPEN
+  WON
+  LOST
+}
+
+enum IntegrationChannel {
+  SITE
+  TELEGRAM
+  CSV
+  MANUAL
+}
+
+model User {
+  id                Int               @id @default(autoincrement())
+  email             String            @unique
+  passwordHash      String            @map("password_hash")
+  fullName          String            @map("full_name")
+  isActive          Boolean           @default(true) @map("is_active")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  ownedLeads        Lead[]            @relation("LeadOwner")
+  assignedTasks     Task[]            @relation("TaskAssignee")
+  createdTasks      Task[]            @relation("TaskOwner")
+  activities        Activity[]
+  deals             Deal[]            @relation("DealOwner")
+  stageChanges      LeadStageHistory[]
+  completedBriefs   Brief[]
+  sentProposals     Proposal[]
+  refreshTokens     RefreshToken[]
+  auditEntries      AuditLog[]
+  userRoles         UserRole[]
+
+  @@map("users")
+}
+
+model Role {
+  id        Int        @id @default(autoincrement())
+  code      String     @unique
+  name      String
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  userRoles UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId Int  @map("user_id")
+  roleId Int  @map("role_id")
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Pipeline {
+  id        Int      @id @default(autoincrement())
+  name      String
+  code      String   @unique
+  isDefault Boolean  @default(false) @map("is_default")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  stages    Stage[]
+  leads     Lead[]
+
+  @@map("pipelines")
+}
+
+model Stage {
+  id             Int               @id @default(autoincrement())
+  pipelineId     Int               @map("pipeline_id")
+  name           String
+  code           String
+  sortOrder      Int               @map("sort_order")
+  outcome        StageOutcome      @default(OPEN)
+  requiredFields Json              @default("[]") @map("required_fields")
+  isActive       Boolean           @default(true) @map("is_active")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  pipeline       Pipeline          @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  leads          Lead[]
+  fromTransitions LeadStageHistory[] @relation("FromStage")
+  toTransitions   LeadStageHistory[] @relation("ToStage")
+
+  @@unique([pipelineId, code])
+  @@index([pipelineId, sortOrder], map: "idx_stages_pipeline_order")
+  @@map("stages")
+}
+
+model Source {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  leads     Lead[]
+
+  @@map("sources")
+}
+
+model LostReason {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique
+  name        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  deals       Deal[]
+
+  @@map("lost_reasons")
+}
+
+model Lead {
+  id                    Int               @id @default(autoincrement())
+  companyName           String            @map("company_name")
+  websiteUrl            String?           @map("website_url")
+  mainContactName       String            @map("main_contact_name")
+  mainContactEmail      String?           @map("main_contact_email")
+  mainContactPhone      String?           @map("main_contact_phone")
+  sourceId              Int?              @map("source_id")
+  ownerUserId           Int?              @map("owner_user_id")
+  pipelineId            Int               @map("pipeline_id")
+  stageId               Int               @map("stage_id")
+  status                LeadStatus        @default(OPEN)
+  priority              LeadPriority      @default(MEDIUM)
+  monthlyBudgetEstimate Decimal?          @db.Decimal(14, 2) @map("monthly_budget_estimate")
+  firstContactAt        DateTime?         @map("first_contact_at")
+  nextFollowUpAt        DateTime?         @map("next_follow_up_at")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  archivedAt            DateTime?         @map("archived_at")
+  source                Source?           @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  owner                 User?             @relation("LeadOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  pipeline              Pipeline          @relation(fields: [pipelineId], references: [id], onDelete: Restrict)
+  stage                 Stage             @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  stageHistory          LeadStageHistory[]
+  briefs                Brief[]
+  deals                 Deal[]
+  tasks                 Task[]
+  activities            Activity[]
+  proposals             Proposal[]
+
+  @@index([ownerUserId, stageId], map: "idx_leads_owner_stage")
+  @@index([sourceId, createdAt(sort: Desc)], map: "idx_leads_source_created")
+  @@index([nextFollowUpAt], map: "idx_leads_followup")
+  @@map("leads")
+}
+
+model LeadStageHistory {
+  id              Int      @id @default(autoincrement())
+  leadId          Int      @map("lead_id")
+  fromStageId     Int?     @map("from_stage_id")
+  toStageId       Int      @map("to_stage_id")
+  changedByUserId Int      @map("changed_by_user_id")
+  changedAt       DateTime @default(now()) @map("changed_at")
+  comment         String?
+  lead            Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fromStage       Stage?   @relation("FromStage", fields: [fromStageId], references: [id], onDelete: SetNull)
+  toStage         Stage    @relation("ToStage", fields: [toStageId], references: [id], onDelete: Restrict)
+  changedByUser   User     @relation(fields: [changedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([leadId, changedAt(sort: Desc)], map: "idx_lead_history")
+  @@map("lead_stage_history")
+}
+
+model Brief {
+  id                  Int      @id @default(autoincrement())
+  leadId              Int      @map("lead_id")
+  businessModel       String?  @map("business_model")
+  targetAudience      String?  @map("target_audience")
+  currentChannels     Json?    @map("current_channels")
+  mainKpi             String?  @map("main_kpi")
+  kpiTarget           String?  @map("kpi_target")
+  currentMetrics      Json?    @map("current_metrics")
+  competitors         String?
+  decisionProcess     String?  @map("decision_process")
+  expectedStartDate   DateTime? @map("expected_start_date")
+  notes               String?
+  completedAt         DateTime? @map("completed_at")
+  completedByUserId   Int?      @map("completed_by_user_id")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  lead                Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  completedByUser     User?     @relation(fields: [completedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([leadId], map: "idx_briefs_lead")
+  @@map("briefs")
+}
+
+model Deal {
+  id             Int        @id @default(autoincrement())
+  leadId         Int        @map("lead_id")
+  ownerUserId    Int?       @map("owner_user_id")
+  amount         Decimal?   @db.Decimal(14, 2)
+  currency       String     @default("USD")
+  pricingModel   String?    @map("pricing_model")
+  status         DealStatus @default(OPEN)
+  probability    Int        @default(50)
+  startDatePlan  DateTime?  @map("start_date_plan")
+  startDateFact  DateTime?  @map("start_date_fact")
+  closeDatePlan  DateTime?  @map("close_date_plan")
+  closeDateFact  DateTime?  @map("close_date_fact")
+  lostReasonId   Int?       @map("lost_reason_id")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+  lead           Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  owner          User?      @relation("DealOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  lostReason     LostReason? @relation(fields: [lostReasonId], references: [id], onDelete: SetNull)
+  tasks          Task[]
+  activities     Activity[]
+  proposals      Proposal[]
+
+  @@index([ownerUserId, status], map: "idx_deals_owner_status")
+  @@index([closeDatePlan], map: "idx_deals_close_plan")
+  @@map("deals")
+}
+
+model Proposal {
+  id                 Int      @id @default(autoincrement())
+  leadId             Int      @map("lead_id")
+  dealId             Int      @map("deal_id")
+  version            Int      @default(1)
+  proposalUrl        String   @map("proposal_url")
+  totalAmount        Decimal? @db.Decimal(14, 2) @map("total_amount")
+  serviceBreakdown   Json?    @map("service_breakdown")
+  sentAt             DateTime? @map("sent_at")
+  sentByUserId       Int?      @map("sent_by_user_id")
+  validUntil         DateTime? @map("valid_until")
+  createdAt          DateTime @default(now()) @map("created_at")
+  lead               Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  deal               Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  sentByUser         User?    @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
+
+  @@index([dealId, version], map: "idx_proposals_deal_version")
+  @@map("proposals")
+}
+
+model Task {
+  id             Int          @id @default(autoincrement())
+  leadId         Int?         @map("lead_id")
+  dealId         Int?         @map("deal_id")
+  ownerUserId    Int          @map("owner_user_id")
+  assigneeUserId Int          @map("assignee_user_id")
+  type           TaskType
+  title          String
+  description    String?
+  priority       TaskPriority @default(MEDIUM)
+  status         TaskStatus   @default(TODO)
+  dueAt          DateTime?    @map("due_at")
+  completedAt    DateTime?    @map("completed_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  lead           Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  deal           Deal?        @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  owner          User         @relation("TaskOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  assignee       User         @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
+
+  @@index([assigneeUserId, dueAt], map: "idx_tasks_assignee_due")
+  @@index([status, dueAt], map: "idx_tasks_status_due")
+  @@map("tasks")
+}
+
+model Activity {
+  id           Int          @id @default(autoincrement())
+  leadId       Int?         @map("lead_id")
+  dealId       Int?         @map("deal_id")
+  authorUserId Int          @map("author_user_id")
+  type         ActivityType
+  content      String
+  activityAt   DateTime     @map("activity_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  deal         Deal?        @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  author       User         @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+
+  @@index([leadId, activityAt(sort: Desc)], map: "idx_activities_lead_time")
+  @@index([dealId, activityAt(sort: Desc)], map: "idx_activities_deal_time")
+  @@map("activities")
+}
+
+model RefreshToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  jti       String    @unique
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId], map: "idx_refresh_tokens_user")
+  @@map("refresh_tokens")
+}
+
+model IntegrationEventLog {
+  id           Int                @id @default(autoincrement())
+  channel      IntegrationChannel
+  externalId   String?            @map("external_id")
+  payload      Json
+  status       String
+  errorMessage String?            @map("error_message")
+  createdAt    DateTime           @default(now()) @map("created_at")
+
+  @@index([channel, createdAt(sort: Desc)], map: "idx_integration_event_channel_time")
+  @@map("integration_event_log")
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  action      String
+  actorUserId Int?     @map("actor_user_id")
+  payload     Json?    @map("payload")
+  createdAt   DateTime @default(now()) @map("created_at")
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId], map: "idx_audit_entity")
+  @@index([actorUserId, createdAt(sort: Desc)], map: "idx_audit_actor_time")
+  @@map("audit_log")
+}
